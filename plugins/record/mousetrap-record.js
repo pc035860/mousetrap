@@ -46,7 +46,29 @@
          *
          * @type {Function}
          */
-        _origHandleKey = Mousetrap.prototype.handleKey;
+        _origHandleKey = Mousetrap.prototype.handleKey,
+
+        /**
+         * options for customization
+         *
+         * @type {Object}
+         */
+        _defaultOptions = {
+            // whether to prevent default behavior
+            preventDefault: false,
+
+            // are we recording sequential keys?
+            sequence: true,
+
+            // sequential key strokes debounce duration
+            sequenceDebounce: 1000
+        },
+
+        /**
+         * current recording options
+         * @type {Object}
+         */
+        _options = null;
 
     /**
      * handles a character key event
@@ -73,12 +95,22 @@
             for (i = 0; i < modifiers.length; ++i) {
                 _recordKey(modifiers[i]);
             }
-            _recordKey(character);
+            if (modifiers.indexOf(character) < 0) {
+                _recordKey(character);
+            }
+
+            if (_options.preventDefault) {
+                e.preventDefault();
+            }
 
         // once a key is released, all keys that were held down at the time
         // count as a keypress
         } else if (e.type == 'keyup' && _currentRecordedKeys.length > 0) {
             _recordCurrentCombo();
+
+            if (_options.preventDefault) {
+                e.preventDefault();
+            }
         }
     }
 
@@ -112,10 +144,20 @@
      * @returns void
      */
     function _recordCurrentCombo() {
+        // clear the sequence when we're not recording combo sequence
+        if (!_options.sequence) {
+            _recordedSequence.length = 0;
+        }
         _recordedSequence.push(_currentRecordedKeys);
         _currentRecordedKeys = [];
         _recordedCharacterKey = false;
-        _restartRecordTimer();
+
+        if (_options.sequence) {
+            _restartRecordTimer();
+        }
+        else {
+            _finishRecording();
+        }
     }
 
     /**
@@ -161,9 +203,10 @@
         }
 
         // reset all recorded state
-        _recordedSequence = [];
+        clearTimeout(_recordTimer);
+        _recordedSequence.length = 0;
         _recordedSequenceCallback = null;
-        _currentRecordedKeys = [];
+        _currentRecordedKeys.length = 0;
     }
 
     /**
@@ -176,7 +219,7 @@
      */
     function _restartRecordTimer() {
         clearTimeout(_recordTimer);
-        _recordTimer = setTimeout(_finishRecording, 1000);
+        _recordTimer = setTimeout(_finishRecording, _options.sequenceDebounce);
     }
 
     /**
@@ -186,13 +229,28 @@
      * @param {Function} callback
      * @returns void
      */
-    Mousetrap.prototype.record = function(callback) {
+    Mousetrap.prototype.record = function(options, callback) {
+        if (typeof options === 'function') {
+            callback = options;
+            options = null;
+        }
+
         var self = this;
         self.recording = true;
         _recordedSequenceCallback = function() {
             self.recording = false;
             callback.apply(self, arguments);
         };
+        if (options) {
+            _options = {};
+            for (key in _defaultOptions) {
+                _options[key] = typeof options[key] !== 'undefined' ? options[key] : _defaultOptions[key];
+            }
+        }
+        else {
+            _options = _defaultOptions;
+        }
+        return _finishRecording;
     };
 
     Mousetrap.prototype.handleKey = function() {
